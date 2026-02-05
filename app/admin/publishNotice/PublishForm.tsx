@@ -1,7 +1,7 @@
 "use client";
 import MDEditor from "@uiw/react-md-editor";
+import { useSearchParams, useRouter } from "next/navigation";
 import React, { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -58,26 +58,38 @@ export default function NoticeboardForm() {
   // const [isSubmitting, setIsSubmitting] = useState(false);
   // const [error, setError] = useState<string | null>(null);
 
+  const searchParams = useSearchParams();
+  const noticeId = searchParams.get("noticeid");
   const [images, setImages] = useState<UploadedImage[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null); // To trigger file input click
 
+  // TODO: fix datetype of formdata to RFC formal
   const [formData, setFormData] = useState({
     type: "Event", // You might want a select input for this
     title: "",
     location: "",
-    eventTime: "",
-    eventEndTime: "",
+    eventTime: new Date().toISOString(),
+    eventEndTime: new Date().toISOString(),
     description: "",
     body: "**hello world!**\n\nstart writing your notice here.", // Initial markdown content
   });
 
+console.log("Current notice", noticeId);
+
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({
-      ...prevData,
-      [name]: value,
+    const { name, value, type } = e.target;
+
+    let finalValue = value;
+
+    if (type === "datetime-local") {
+      finalValue = new Date(value).toISOString();
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: finalValue,
     }));
   };
 
@@ -91,7 +103,7 @@ export default function NoticeboardForm() {
 
   // -- changes --
   const handleFileSelectAndUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
+    e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles) return;
@@ -117,7 +129,7 @@ export default function NoticeboardForm() {
             method: "POST",
             body: imageFormData,
             credentials: "include",
-          }
+          },
         );
 
         if (!response.ok)
@@ -131,13 +143,13 @@ export default function NoticeboardForm() {
           prev.map((img) =>
             img.file === image.file
               ? { ...img, id: result.ImageID, isUploadingImage: false }
-              : img
-          )
+              : img,
+          ),
         );
       } catch {
         // setError(err.message);
         setImages((prev) =>
-          prev.filter((img) => img.previewUrl !== image.previewUrl)
+          prev.filter((img) => img.previewUrl !== image.previewUrl),
         );
         // removed the failed uploads
       }
@@ -147,40 +159,45 @@ export default function NoticeboardForm() {
   // Deletes a specific image from the array by its previewUrl
   const handleImageDelete = (previewUrlToDelete: string) => {
     const imageToDelete = images.find(
-      (img) => img.previewUrl === previewUrlToDelete
+      (img) => img.previewUrl === previewUrlToDelete,
     );
     if (imageToDelete) {
       URL.revokeObjectURL(imageToDelete.previewUrl); // Clean up memory
     }
     setImages((prev) =>
-      prev.filter((img) => img.previewUrl !== previewUrlToDelete)
+      prev.filter((img) => img.previewUrl !== previewUrlToDelete),
     );
+  };
+
+  const toLocalInput = (iso?: string) => {
+    if (!iso) return "";
+    return new Date(iso).toISOString();
   };
 
   // Copies the ID for a specific image
   const handleCopyId = (previewUrlToCopy: string) => {
     const imageToCopy = images.find(
-      (img) => img.previewUrl === previewUrlToCopy
+      (img) => img.previewUrl === previewUrlToCopy,
     );
     if (!imageToCopy || !imageToCopy.id) return;
 
     navigator.clipboard.writeText(
-      `${process.env.NEXT_PUBLIC_ASSET_URL}/${imageToCopy.id}.webp`
+      `${process.env.NEXT_PUBLIC_ASSET_URL}/tmp/${imageToCopy.id}.webp`,
     );
     setImages((prev) =>
       prev.map((img) =>
         img.previewUrl === previewUrlToCopy
           ? { ...img, copySuccess: true }
-          : img
-      )
+          : img,
+      ),
     );
     setTimeout(() => {
       setImages((prev) =>
         prev.map((img) =>
           img.previewUrl === previewUrlToCopy
             ? { ...img, copySuccess: false }
-            : img
-        )
+            : img,
+        ),
       );
     }, 2000);
   };
@@ -200,7 +217,7 @@ export default function NoticeboardForm() {
           },
           body: JSON.stringify(formData),
           credentials: "include",
-        }
+        },
       );
 
       if (!response.ok) {
@@ -211,7 +228,7 @@ export default function NoticeboardForm() {
 
       // successful
       console.log("Notice submitted successfully!");
-      router.push("/admin/noticeboard");
+      router.push("/noticeboard");
     } catch {
       toast.error("Failed to submit notice");
       // console.error("Failed to submit notice:", err);
@@ -225,19 +242,82 @@ export default function NoticeboardForm() {
 
   // Clean up all object URLs when the component unmounts
   useEffect(() => {
+    if (noticeId) {
+      // Fetch existing notice data and populate form
+      const fetchNotice = async () => {
+        try {
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/notice/${noticeId}`,
+            {
+              credentials: "include",
+            },
+          );
+          if (!res.ok) throw new Error("Notice not found");
+          
+          const data = await res.json();
+          setFormData({
+            type: data.entity,
+            title: data.title,
+            location: data.location,
+            eventTime: data.eventTime,
+            eventEndTime: data.eventEndTime,
+            description: data.description,
+            body: data.body,
+          });
+        } catch (err) {
+          console.error("Failed to fetch notice:", err);
+        }
+      };
+
+      fetchNotice(); 
+    }
     return () => {
       images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
     };
   }, []); // vs [images]
 
+  const handleEdit = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!noticeId) return;
+    
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/editNotice/${noticeId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(formData),
+          credentials: "include",
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Something went wrong");
+      }
+      
+      console.log("Notice updated successfully!");
+      router.push("/noticeboard");
+    }
+    catch {
+      toast.error("Failed to update notice");
+      // console.error("Failed to update notice:", err);
+    }
+  }
+
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-2xl">Publish Notice / Event for campus community</CardTitle>
+        <CardTitle className="text-2xl">
+          {noticeId ? "Edit" : "Publish"} Notice / Event for campus community
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
-          {["Title", "Description"].map((field) => (
+          {["title", "description"].map((field) => (
             <div key={field}>
               <Label
                 htmlFor={field}
@@ -253,7 +333,7 @@ export default function NoticeboardForm() {
                 // TODO: add correct interface NoticeFormData
                 value={(formData as any)[field]}
                 onChange={handleChange}
-                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400"
+                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
                 required
               />
             </div>
@@ -276,8 +356,7 @@ export default function NoticeboardForm() {
                   type="text"
                   value={formData.location}
                   onChange={handleChange}
-                  className="mt-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400"
-                  required
+                  className="mt-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark123:text-white"
                 />
               </div>
               <div>
@@ -292,10 +371,9 @@ export default function NoticeboardForm() {
                   name="eventTime"
                   placeholder="Event Time"
                   type="datetime-local"
-                  value={formData.eventTime}
+                  value={toLocalInput(formData.eventTime)}
                   onChange={handleChange}
-                  className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400"
-                  required
+                  className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
                 />
               </div>
             </div>
@@ -377,10 +455,9 @@ export default function NoticeboardForm() {
               id="eventEndTime"
               name="eventEndTime"
               type="datetime-local"
-              value={formData.eventEndTime}
+              value={toLocalInput(formData.eventEndTime)}
               onChange={handleChange}
-              className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400"
-              required
+              className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
             />
           </div>
           <div>
@@ -394,10 +471,9 @@ export default function NoticeboardForm() {
               id="eventEndTime"
               name="eventEndTime"
               type="datetime-local"
-              value={formData.eventEndTime}
+              value={toLocalInput(formData.eventEndTime)}
               onChange={handleChange}
-              className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400"
-              required
+              className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
             />
           </div>
 
@@ -419,12 +495,32 @@ export default function NoticeboardForm() {
           </div>
 
           {/* Submit Button */}
-          <Button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition"
-          >
-            Publish Notice
-          </Button>
+          {noticeId ? (
+            // cancel button and update button in one columns
+            <div className="flex-col w-full space-y-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push("/noticeboard")}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition"
+                onClick={handleEdit}
+              >
+                Update Notice
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="submit"
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition"
+            >
+              Publish Notice
+            </Button>
+          )}
         </form>
       </CardContent>
     </Card>

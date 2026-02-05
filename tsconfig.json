@@ -38,7 +38,8 @@
   ],
   "exclude": [
     "node_modules",
-    "search"
+    "search",
+    "server",
   ],
   "darkMode": [
     "class",

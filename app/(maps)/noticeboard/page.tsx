@@ -1,15 +1,23 @@
 "use client";
 
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-} from "react";
-import { Search, Share2, Copy } from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Search, Share2, Copy, Edit, Trash } from "lucide-react";
 import ShareDialog from "./ShareDialog";
 import Link from "next/link";
+import { useGContext } from "@/components/ContextProvider";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 
 interface Notice {
   id: string;
@@ -21,6 +29,56 @@ interface Notice {
   eventTime: string;
 }
 
+const DeletionDialog = ({handleDelete}: {handleDelete: (e: React.MouseEvent) => Promise<void>}) => {
+  return (
+    <Dialog>
+              <DialogTrigger asChild>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Open delete dialog");
+                  }}
+                  className="flex items-center space-x-2 text-sm text-gray-500 hover:text-red-600 transition-colors"
+                >
+                  <Trash className="w-4 h-4" />
+                  <span>Delete</span>
+                </button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Are you absolutely sure?</DialogTitle>
+                  <DialogDescription>
+                    <span className="font-extrabold">
+                      This action cannot be undone.
+                    </span>
+                    <br />
+                    <br />
+                    This will permanently delete the notice from the database.{" "}
+                    Do you still wish to delete your profile data?
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="destructive" onClick={handleDelete}>
+                      Yes
+                    </Button>
+                  </DialogClose>
+
+                  <DialogClose asChild>
+                    <Button
+                      className="bg-green-600 dark:bg-green-600 hover:bg-green-500"
+                      variant="destructive"
+                    >
+                      No, I will stay
+                    </Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+  )
+}
+
 const NoticeCard = ({
   notice,
   onShare,
@@ -29,46 +87,106 @@ const NoticeCard = ({
   notice: Notice;
   onShare: (notice: Notice) => void;
   onCopy: (notice: Notice) => void;
-}) => (
-  <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow group">
-    <h2 className="text-xl font-bold text-gray-800 group-hover:text-blue-600 transition-colors">
-      {notice.title}
-    </h2>
-    <p className="text-gray-600 mt-2">{notice.description}</p>
-    <div className="text-sm text-gray-500 mt-4">
-      <span>
-        <strong>Location:</strong> {notice.location}
-      </span>
-      <span className="ml-4">
-        <strong>Time:</strong> {new Date(notice.eventTime).toLocaleString()}
-      </span>
+  onEdit?: (notice: Notice) => void;
+}) => {
+  const { isAdmin } = useGContext();
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/deleteNotice/${notice.id}`,
+        {
+          method: "DELETE",
+          credentials: "include", // include cookies for authentication
+        },
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw toast.error(error.error || "Failed to delete notice");
+      }
+
+      const data = await response.json();
+
+      // show success message
+      toast.success(data.message || "Notice deleted successfully");
+
+      // refresh the page or update the state to remove the notice from UI
+      window.location.reload(); // Simple approach - reload page
+
+      // or if you have a parent component managing state:
+      // call a callback prop to update the parent's state
+      // onDeleteSuccess?.(notice.noticeId);
+    } catch (error) {
+      console.error("Error deleting notice:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete notice",
+      );
+    }
+  };
+
+  const router = useRouter();
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow group">
+      <h2 className="text-xl font-bold text-gray-800 group-hover:text-blue-600 transition-colors">
+        {notice.title}
+      </h2>
+      <p className="text-gray-600 mt-2">{notice.description}</p>
+      <div className="text-sm text-gray-500 mt-4">
+        <span>
+          <strong>Location:</strong> {notice.location}
+        </span>
+        <span className="ml-4">
+          <strong>Time:</strong> {new Date(notice.eventTime).toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center space-x-4 mt-4 pt-4 border-t border-gray-100">
+        {isAdmin && (
+          <>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                router.push(`/admin/publishNotice?noticeid=${notice.id}`);
+              }}
+              className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
+            >
+              <Edit className="w-4 h-4" />
+              <span>Edit</span>
+            </button>
+            <DeletionDialog handleDelete={handleDelete} />
+          </>
+        )}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onShare(notice);
+          }}
+          className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
+        >
+          <Share2 className="w-4 h-4" />
+          <span>Share</span>
+        </button>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onCopy(notice);
+          }}
+          className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
+        >
+          <Copy className="w-4 h-4" />
+          <span>Copy</span>
+        </button>
+      </div>
     </div>
-    <div className="flex items-center space-x-4 mt-4 pt-4 border-t border-gray-100">
-      <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onShare(notice);
-        }}
-        className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
-      >
-        <Share2 className="w-4 h-4" />
-        <span>Share</span>
-      </button>
-      <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onCopy(notice);
-        }}
-        className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
-      >
-        <Copy className="w-4 h-4" />
-        <span>Copy</span>
-      </button>
-    </div>
-  </div>
-);
+  );
+};
 
 export default function NoticeBoardPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -85,14 +203,14 @@ export default function NoticeBoardPage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/notice?page=${page}`
+        `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/notice?page=${page}`,
       );
       if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
       const json = await res.json();
 
       if (json?.noticeboard_list?.length > 0) {
         setNotices((prev) => {
-           // TODO: add correct interface for noticeboard_list
+          // TODO: add correct interface for noticeboard_list
           const newNotices = [
             ...prev,
             ...json.noticeboard_list.map((n: any) => ({
@@ -124,7 +242,7 @@ export default function NoticeBoardPage() {
           setPage((prev) => prev + 1);
         }
       },
-      { threshold: 1.0 }
+      { threshold: 1.0 },
     );
     const current = loaderRef.current;
     if (current) observer.observe(current);
@@ -134,60 +252,77 @@ export default function NoticeBoardPage() {
   }, [hasMore, loading]);
 
   //cache and fuzzy search effect
+  // Cache and fuzzy search effect
   useEffect(() => {
     const timeout = setTimeout(async () => {
       const query = searchTerm.trim();
+
+      // If search is empty, reset to paginated view
       if (!query) {
         setIsSearching(false);
-        setPage(1);
         setNotices([]);
+        setPage(1);
+        setHasMore(true);
         return;
       }
 
       setIsSearching(true);
+      setLoading(true);
 
       const CACHE_KEY = "notice_search_cache";
-      const rawCache = localStorage.getItem(CACHE_KEY);
-      const cache = rawCache ? JSON.parse(rawCache) : {};
-
-      // Checking cache first
-      if (cache[query]) {
-        setNotices(cache[query]);
-        setLoading(false);
-        return;
-      }
 
       try {
-        setLoading(true);
-        const res = await fetch(
-          `${
-            process.env.NEXT_PUBLIC_MAPS_URL
-          }/api/maps/notice/fuzzy?query=${encodeURIComponent(query)}&limit=20`
-        );
-        if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
-        const data = await res.json();
-        const results = data.notices || [];
+        const rawCache = localStorage.getItem(CACHE_KEY);
+        const cache = rawCache ? JSON.parse(rawCache) : {};
 
-        setNotices(results);
+        let results;
 
-        // Saving to cache
-        cache[query] = results;
-        localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+        // Check cache first
+        if (cache[query]) {
+          results = cache[query];
+        } else {
+          // Fetch from API
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/notice/fuzzy?query=${encodeURIComponent(query)}&limit=20`,
+          );
 
-        // Auto-clearing if cache exceeds 5 MB
-        const cacheSize = new Blob([JSON.stringify(cache)]).size;
-        const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
-        if (cacheSize > MAX_SIZE) {
-          // console.warn("Cache exceeded 5 MB. Clearing localStorage cache.");
-          localStorage.removeItem(CACHE_KEY);
+          if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
+
+          const data = await res.json();
+          results = data.results || [];
+
+          // Save to cache
+          const newCache = { ...cache, [query]: results };
+          const cacheSize = new Blob([JSON.stringify(newCache)]).size;
+          const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
+          if (cacheSize > MAX_SIZE) {
+            // Keep only current result if cache is too large
+            localStorage.setItem(
+              CACHE_KEY,
+              JSON.stringify({ [query]: results }),
+            );
+          } else {
+            localStorage.setItem(CACHE_KEY, JSON.stringify(newCache));
+          }
         }
-      } catch {
-        // console.error("Fuzzy search error:", err);
-        toast.error("Error searching notice.");
+
+        // Map results to match Notice interface
+        const mappedResults = results.map((n: any) => ({
+          ...n,
+          id: n.NoticeId || n.id,
+        }));
+
+        setNotices(mappedResults);
+        setHasMore(false); // Disable infinite scroll during search
+      } catch (err) {
+        console.error("Fuzzy search error:", err);
+        toast.error("Error searching notices.");
+        setNotices([]);
       } finally {
         setLoading(false);
       }
-    }, 300); // debounce delay
+    }, 300);
 
     return () => clearTimeout(timeout);
   }, [searchTerm]);
@@ -198,7 +333,7 @@ export default function NoticeBoardPage() {
 
   const handleCopy = async (notice: Notice) => {
     const text = `${notice.title}\n\n${notice.description}\n\nTime: ${new Date(
-      notice.eventTime
+      notice.eventTime,
     ).toLocaleString()}\nLocation: ${notice.location}`;
     try {
       await navigator.clipboard.writeText(text);
@@ -249,26 +384,26 @@ export default function NoticeBoardPage() {
               No notices available at the moment.
             </p>
           ) : null}
+
+          {notices.length > 0 && (
+            <div ref={loaderRef} className="text-center py-6 text-gray-500">
+              {loading
+                ? "Loading more notices..."
+                : hasMore
+                  ? "Scroll down to load more"
+                  : "You've reached the end."}
+            </div>
+          )}
         </div>
 
-        {notices.length > 0 && (
-          <div ref={loaderRef} className="text-center py-6 text-gray-500">
-            {loading
-              ? "Loading more notices..."
-              : hasMore
-              ? "Scroll down to load more"
-              : "You've reached the end."}
-          </div>
+        {shareNotice && (
+          <ShareDialog
+            url={`${shareNotice.id}`}
+            title={shareNotice.title}
+            onClose={() => setShareNotice(null)}
+          />
         )}
       </div>
-
-      {shareNotice && (
-        <ShareDialog
-          url={`${shareNotice.id}`}
-          title={shareNotice.title}
-          onClose={() => setShareNotice(null)}
-        />
-      )}
     </div>
   );
 }

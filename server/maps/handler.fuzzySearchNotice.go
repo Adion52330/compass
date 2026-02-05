@@ -4,12 +4,13 @@ import (
 	"compass/connections"
 	"compass/model"
 	"net/http"
-	"github.com/gin-gonic/gin"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
 )
 
 func FuzzySearchNoticesHandler(c *gin.Context) {
-	
+
 	query := c.Query("query")
 	if query == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "query is required"})
@@ -30,7 +31,7 @@ func FuzzySearchNoticesHandler(c *gin.Context) {
 		SELECT *, 
 		       greatest(similarity(title, ?), similarity(description, ?), similarity(entity, ?)) AS score
 		FROM notices
-		WHERE greatest(similarity(title, ?), similarity(description, ?), similarity(entity, ?)) > 0.4
+		WHERE greatest(similarity(title, ?), similarity(description, ?), similarity(entity, ?)) > 0.1
 		ORDER BY score DESC
 		LIMIT ?
 	`, query, query, query, query, query, query, limit).Scan(&notices).Error

@@ -60,7 +60,7 @@ func signupHandler(c *gin.Context) {
 		Email:             strings.ToLower(input.Email),
 		Password:          string(hashPass),
 		IsVerified:        false,
-		Role:              model.UserRole,
+		Role:              model.AdminRole,
 		VerificationToken: fmt.Sprintf("%s<>%s", token, expiry),
 		Profile:           model.Profile{Email: strings.ToLower(input.Email), Visibility: true},
 	}
