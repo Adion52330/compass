@@ -6,17 +6,17 @@ import ShareDialog from "./ShareDialog";
 import Link from "next/link";
 import { useGContext } from "@/components/ContextProvider";
 import { toast } from "sonner";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+// import {
+//   Dialog,
+//   DialogClose,
+//   DialogContent,
+//   DialogDescription,
+//   DialogFooter,
+//   DialogHeader,
+//   DialogTitle,
+//   DialogTrigger,
+// } from "@/components/ui/dialog";
+// import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 
 interface Notice {
@@ -29,55 +29,59 @@ interface Notice {
   eventTime: string;
 }
 
-const DeletionDialog = ({handleDelete}: {handleDelete: (e: React.MouseEvent) => Promise<void>}) => {
-  return (
-    <Dialog>
-              <DialogTrigger asChild>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log("Open delete dialog");
-                  }}
-                  className="flex items-center space-x-2 text-sm text-gray-500 hover:text-red-600 transition-colors"
-                >
-                  <Trash className="w-4 h-4" />
-                  <span>Delete</span>
-                </button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Are you absolutely sure?</DialogTitle>
-                  <DialogDescription>
-                    <span className="font-extrabold">
-                      This action cannot be undone.
-                    </span>
-                    <br />
-                    <br />
-                    This will permanently delete the notice from the database.{" "}
-                    Do you still wish to delete your profile data?
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <DialogClose asChild>
-                    <Button variant="destructive" onClick={handleDelete}>
-                      Yes
-                    </Button>
-                  </DialogClose>
+// const DeletionDialog = ({
+//   handleDelete,
+// }: {
+//   handleDelete: (e: React.MouseEvent) => Promise<void>;
+// }) => {
+//   return (
+//     <Dialog>
+//       <DialogTrigger asChild>
+//         <button
+//           onClick={(e) => {
+//             e.preventDefault();
+//             e.stopPropagation();
+//             console.log("Open delete dialog");
+//           }}
+//           className="flex items-center space-x-2 text-sm text-gray-500 hover:text-red-600 transition-colors"
+//         >
+//           <Trash className="w-4 h-4" />
+//           <span>Delete</span>
+//         </button>
+//       </DialogTrigger>
+//       <DialogContent>
+//         <DialogHeader>
+//           <DialogTitle>Are you absolutely sure?</DialogTitle>
+//           <DialogDescription>
+//             <span className="font-extrabold">
+//               This action cannot be undone.
+//             </span>
+//             <br />
+//             <br />
+//             This will permanently delete the notice from the database. Do you
+//             still wish to delete your profile data?
+//           </DialogDescription>
+//         </DialogHeader>
+//         <DialogFooter>
+//           <DialogClose asChild>
+//             <Button variant="destructive" onClick={handleDelete}>
+//               Yes
+//             </Button>
+//           </DialogClose>
 
-                  <DialogClose asChild>
-                    <Button
-                      className="bg-green-600 dark:bg-green-600 hover:bg-green-500"
-                      variant="destructive"
-                    >
-                      No, I will stay
-                    </Button>
-                  </DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-  )
-}
+//           <DialogClose asChild>
+//             <Button
+//               className="bg-green-600 dark:bg-green-600 hover:bg-green-500"
+//               variant="destructive"
+//             >
+//               No, I will stay
+//             </Button>
+//           </DialogClose>
+//         </DialogFooter>
+//       </DialogContent>
+//     </Dialog>
+//   );
+// };
 
 const NoticeCard = ({
   notice,
@@ -95,31 +99,32 @@ const NoticeCard = ({
     e.preventDefault();
     e.stopPropagation();
 
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this notice? This action cannot be undone.",
+    );
+
+    if (!confirmed) return; // user clicked Cancel
+
     try {
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/deleteNotice/${notice.id}`,
         {
           method: "DELETE",
-          credentials: "include", // include cookies for authentication
+          credentials: "include",
         },
       );
 
       if (!response.ok) {
         const error = await response.json();
-        throw toast.error(error.error || "Failed to delete notice");
+        throw new Error(error.error || "Failed to delete notice");
       }
 
       const data = await response.json();
-
-      // show success message
       toast.success(data.message || "Notice deleted successfully");
 
-      // refresh the page or update the state to remove the notice from UI
-      window.location.reload(); // Simple approach - reload page
+      localStorage.removeItem("notice_search_cache");
 
-      // or if you have a parent component managing state:
-      // call a callback prop to update the parent's state
-      // onDeleteSuccess?.(notice.noticeId);
+      window.location.reload();
     } catch (error) {
       console.error("Error deleting notice:", error);
       toast.error(
@@ -158,7 +163,17 @@ const NoticeCard = ({
               <Edit className="w-4 h-4" />
               <span>Edit</span>
             </button>
-            <DeletionDialog handleDelete={handleDelete} />
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDelete(e);
+              }}
+              className="flex items-center space-x-2 text-sm text-gray-500 hover:text-red-600 transition-colors"
+            >
+              <Trash className="w-4 h-4" />
+              <span>Delete</span>
+            </button>
           </>
         )}
         <button
@@ -344,6 +359,8 @@ export default function NoticeBoardPage() {
     }
   };
 
+  const { isAdmin } = useGContext();
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="max-w-5xl mx-auto">
@@ -355,12 +372,34 @@ export default function NoticeBoardPage() {
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-gray-400" />
           </div>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/admin/publishNotice";
+              }}
+              className="absolute inset-y-0 right-2 my-auto
+             h-8 px-3
+             flex items-center gap-1 cursor-pointer
+             rounded-xl bg-blue-500 text-white
+             hover:bg-blue-600 shadow
+             transition active:scale-95"
+            >
+              <span className="text-lg font-semibold">+</span>
+              <span className="text-sm font-medium whitespace-nowrap">
+                Publish a Notice
+              </span>
+            </button>
+          ) : null}
+
           <input
             type="text"
             placeholder="Search notices by title, content, or department..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="block w-full pl-10 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 shadow-sm text-gray-800 placeholder-gray-500 transition-all"
+            className="block w-full pl-10 pr-44 py-3 rounded-xl
+               border border-gray-300 focus:ring-2 focus:ring-blue-400
+               shadow-sm text-gray-800 placeholder-gray-500 transition-all"
           />
         </div>
 

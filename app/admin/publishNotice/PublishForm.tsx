@@ -68,28 +68,22 @@ export default function NoticeboardForm() {
     type: "Event", // You might want a select input for this
     title: "",
     location: "",
-    eventTime: new Date().toISOString(),
-    eventEndTime: new Date().toISOString(),
+    eventTime: "",
+    eventEndTime: "",
     description: "",
     body: "**hello world!**\n\nstart writing your notice here.", // Initial markdown content
   });
 
-console.log("Current notice", noticeId);
+  console.log("Current notice", noticeId);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
-    const { name, value, type } = e.target;
-
-    let finalValue = value;
-
-    if (type === "datetime-local") {
-      finalValue = new Date(value).toISOString();
-    }
+    const { name, value } = e.target;
 
     setFormData((prev) => ({
       ...prev,
-      [name]: finalValue,
+      [name]: value,
     }));
   };
 
@@ -169,11 +163,6 @@ console.log("Current notice", noticeId);
     );
   };
 
-  const toLocalInput = (iso?: string) => {
-    if (!iso) return "";
-    return new Date(iso).toISOString();
-  };
-
   // Copies the ID for a specific image
   const handleCopyId = (previewUrlToCopy: string) => {
     const imageToCopy = images.find(
@@ -203,11 +192,18 @@ console.log("Current notice", noticeId);
   };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // setIsSubmitting(true);
-    // setError(null);
-    // console.log("Submitted notice:", formData);
 
     try {
+      const payload = {
+        ...formData,
+        eventEndTime: formData.eventEndTime
+          ? new Date(formData.eventEndTime).toISOString()
+          : null,
+        eventTime: formData.eventTime
+          ? new Date(formData.eventTime).toISOString()
+          : null
+      };
+
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/notice`,
         {
@@ -215,30 +211,43 @@ console.log("Current notice", noticeId);
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
           credentials: "include",
         },
       );
 
       if (!response.ok) {
-        // error message from backend response
         const errorData = await response.json();
         throw new Error(errorData.error || "Something went wrong");
       }
 
-      // successful
+      localStorage.removeItem("notice_search_cache");
+
       console.log("Notice submitted successfully!");
       router.push("/noticeboard");
     } catch {
       toast.error("Failed to submit notice");
-      // console.error("Failed to submit notice:", err);
-      // setError(err.message);
-    } finally {
-      // setIsSubmitting(false);
     }
-
-    // router.push('/admin/noticeboard');
   };
+
+  function isoToDatetimeLocal(iso: string) {
+  const date = new Date(iso);
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return (
+    date.getFullYear() +
+    "-" +
+    pad(date.getMonth() + 1) +
+    "-" +
+    pad(date.getDate()) +
+    "T" +
+    pad(date.getHours()) +
+    ":" +
+    pad(date.getMinutes())
+  );
+}
+
 
   // Clean up all object URLs when the component unmounts
   useEffect(() => {
@@ -253,14 +262,14 @@ console.log("Current notice", noticeId);
             },
           );
           if (!res.ok) throw new Error("Notice not found");
-          
+
           const data = await res.json();
           setFormData({
             type: data.entity,
             title: data.title,
             location: data.location,
-            eventTime: data.eventTime,
-            eventEndTime: data.eventEndTime,
+            eventTime: isoToDatetimeLocal(data.eventTime),
+            eventEndTime: isoToDatetimeLocal(data.eventEndTime),
             description: data.description,
             body: data.body,
           });
@@ -269,7 +278,7 @@ console.log("Current notice", noticeId);
         }
       };
 
-      fetchNotice(); 
+      fetchNotice();
     }
     return () => {
       images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
@@ -279,8 +288,17 @@ console.log("Current notice", noticeId);
   const handleEdit = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!noticeId) return;
-    
+
     try {
+      const payload = {
+        ...formData,
+        eventEndTime: formData.eventEndTime
+          ? new Date(formData.eventEndTime).toISOString()
+          : null,
+        eventTime: formData.eventTime
+          ? new Date(formData.eventTime).toISOString()
+          : null
+      };
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/editNotice/${noticeId}`,
         {
@@ -288,7 +306,7 @@ console.log("Current notice", noticeId);
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
           credentials: "include",
         },
       );
@@ -297,16 +315,16 @@ console.log("Current notice", noticeId);
         const errorData = await response.json();
         throw new Error(errorData.error || "Something went wrong");
       }
-      
+
+      localStorage.removeItem("notice_search_cache");
+
       console.log("Notice updated successfully!");
       router.push("/noticeboard");
-    }
-    catch {
+    } catch {
       toast.error("Failed to update notice");
       // console.error("Failed to update notice:", err);
     }
-  }
-
+  };
 
   return (
     <Card>
@@ -345,7 +363,7 @@ console.log("Current notice", noticeId);
               <div>
                 <Label
                   htmlFor="location"
-                  className="block text-sm font-medium text-gray-700"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
                 >
                   Location
                 </Label>
@@ -356,22 +374,22 @@ console.log("Current notice", noticeId);
                   type="text"
                   value={formData.location}
                   onChange={handleChange}
-                  className="mt-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark123:text-white"
+                  className="mt-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
                 />
               </div>
               <div>
                 <Label
                   htmlFor="eventTime"
-                  className="block text-sm font-medium text-gray-700"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
                 >
-                  Time
+                  Time (Start Time)
                 </Label>
                 <Input
                   id="eventTime"
                   name="eventTime"
                   placeholder="Event Time"
                   type="datetime-local"
-                  value={toLocalInput(formData.eventTime)}
+                  value={formData.eventTime}
                   onChange={handleChange}
                   className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
                 />
@@ -380,7 +398,7 @@ console.log("Current notice", noticeId);
 
             {/* Scrollable Multi-Image Preview Pane */}
             <div className="md:w-1/2">
-              <Label className="block text-sm font-medium text-gray-700">
+              <Label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Images
               </Label>
               {/* Hidden file input that now accepts multiple files */}
@@ -447,7 +465,7 @@ console.log("Current notice", noticeId);
           <div>
             <label
               htmlFor="eventEndTime"
-              className="block text-sm font-medium text-gray-700"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
             >
               Event End Time
             </label>
@@ -455,23 +473,7 @@ console.log("Current notice", noticeId);
               id="eventEndTime"
               name="eventEndTime"
               type="datetime-local"
-              value={toLocalInput(formData.eventEndTime)}
-              onChange={handleChange}
-              className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="eventEndTime"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Event End Time
-            </label>
-            <input
-              id="eventEndTime"
-              name="eventEndTime"
-              type="datetime-local"
-              value={toLocalInput(formData.eventEndTime)}
+              value={formData.eventEndTime}
               onChange={handleChange}
               className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-500 dark:text-white"
             />
@@ -479,7 +481,7 @@ console.log("Current notice", noticeId);
 
           {/* The MDEditor for the description */}
           <div>
-            <Label className="block text-sm font-semibold text-gray-700">
+            <Label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
               Body (Markdown Supported)
             </Label>
             <div
@@ -497,7 +499,7 @@ console.log("Current notice", noticeId);
           {/* Submit Button */}
           {noticeId ? (
             // cancel button and update button in one columns
-            <div className="flex-col w-full space-y-4">
+            <div className="flex-col w-full space-x-4">
               <Button
                 type="button"
                 variant="outline"
