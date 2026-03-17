@@ -177,18 +177,16 @@ func updateProfile(c *gin.Context) {
 	}
 
 	// Check if verification request is needed, email should be same, it can't be changed
-	// if user.Profile.Name != profileData.Name ||
-	// 	user.Profile.RollNo != profileData.RollNo ||
-	// 	user.Profile.Dept != profileData.Dept ||
-	// 	user.Profile.Course != profileData.Course {
-	// 	// Verify from oa
-	// 	if !verifyProfile(c, profileData) {
-	// 		return
-	// 	}
+	if user.Profile.Name != profileData.Name ||
+		user.Profile.RollNo != profileData.RollNo ||
+		user.Profile.Dept != profileData.Dept ||
+		user.Profile.Course != profileData.Course {
+		// Verify from oa
+		if !verifyProfile(c, profileData) {
+			return
+		}
 
-	// }
-
-	// TODO: resolve this.
+	}
 	var newPfpPath string
 	if user.ProfilePic == false {
 		if path, err := FetchAndSaveProfileImage(input.RollNo, user.Email, userID.(uuid.UUID)); err == nil && path != "" {
@@ -349,5 +347,65 @@ func autoC(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"automation": studentDetails,
+	})
+}
+
+func getUserByEmail(c *gin.Context) {
+	email := c.Query("email")
+	if email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email query parameter is required"})
+		return
+	}
+
+	var user model.User
+	err := connections.DB.
+		Where("email = ?", email).
+		Preload("Profile").
+		First(&user).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
+		logrus.WithError(err).Error("Database error fetching user")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"name":   user.Profile.Name,
+		"rollNo": user.Profile.RollNo,
+		"email":  user.Email,
+	})
+}
+
+func listUsersHandler(c *gin.Context) {
+	var users []model.User
+
+	err := connections.DB.
+		Where("role IN ?", []int{100}).
+		Preload("Profile").
+		Find(&users).Error
+
+	if err != nil {
+		logrus.WithError(err).Error("Database error fetching users")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	response := make([]gin.H, 0, len(users))
+
+	for _, user := range users {
+		response = append(response, gin.H{
+			"name":   user.Profile.Name,
+			"rollNo": user.Profile.RollNo,
+			"email":  user.Email,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"users": response,
+		"count": len(response),
 	})
 }
