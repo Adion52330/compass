@@ -1,247 +1,383 @@
 "use client";
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Search, Share2, Copy, Edit, Trash } from "lucide-react";
+import ShareDialog from "./ShareDialog";
+import Link from "next/link";
+import { useGContext } from "@/components/ContextProvider";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Search } from "lucide-react";
-import { useLocations } from "@/app/hooks/useLocations";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
 
-export default function Home() {
-  const [results, setResults] = useState<any[]>([]); // storing results for dropdown
-  const { isValidating } = useLocations();
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+interface Notice {
+  id: string;
+  title: string;
+  description: string;
+  body: string;
+  entity: string;
+  location: string;
+  eventTime: string;
+}
 
-  // Ensure markerRef is initialized as a ref object with current property
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (!window.markerRef) {
-        window.markerRef = { current: [] };
-      } else if (!window.markerRef.current) {
-        window.markerRef.current = [];
+const NoticeCard = ({
+  notice,
+  onShare,
+  onCopy,
+}: {
+  notice: Notice;
+  onShare: (notice: Notice) => void;
+  onCopy: (notice: Notice) => void;
+  onEdit?: (notice: Notice) => void;
+}) => {
+  const { isAdmin } = useGContext();
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this notice? This action cannot be undone.",
+    );
+
+    if (!confirmed) return; // user clicked Cancel
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/deleteNotice/${notice.id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        },
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete notice");
       }
-    }
-  }, []);
 
-  // Fuzzy search function with caching
-  // TODO: Update the logic to do the fuzzy search on the local location store not on the api
-  const fuzzySearch = async (searchQuery: string) => {
-    if (!searchQuery.trim()) return [];
+      const data = await response.json();
+      toast.success(data.message || "Notice deleted successfully");
 
-    const CACHE_KEY = "search_cache";
-    const rawCache = localStorage.getItem(CACHE_KEY);
-    const cache = rawCache ? JSON.parse(rawCache) : {};
+      localStorage.removeItem("notice_search_cache");
 
-    // Checking local cache first
-    if (cache[searchQuery]) {
-      return cache[searchQuery];
-    }
-
-    // Calling backend if query not found in cache
-    const res = await fetch(
-      `${
-        process.env.NEXT_PUBLIC_MAPS_URL
-      }/api/maps/location/fuzzy?query=${encodeURIComponent(searchQuery)}`
-    );
-    const data = await res.json();
-    const results = data.results || [];
-
-    // Saving new results in cache
-    cache[searchQuery] = results;
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-
-    // Auto-clearing cache if it exceeds 5 MB
-    const size = new Blob([JSON.stringify(cache)]).size;
-    const MAX = 5 * 1024 * 1024;
-    if (size > MAX) {
-      // console.warn("Cache exceeded 5MB. Clearing cache.");
-      localStorage.removeItem(CACHE_KEY);
-    }
-
-    return results;
-  };
-
-  // Search handler
-  const handleSearch = async () => {
-    if (!window || !query.trim()) return;
-
-    const mapRef = window.mapRef;
-
-    // Clearing previous markers if needed
-    if (
-      window.markerRef?.current &&
-      Array.isArray(window.markerRef.current) &&
-      window.markerRef.current.length
-    ) {
-      window.markerRef.current.forEach((m: any) => {
-        try {
-          m.remove();
-        } catch {}
-      });
-      // Resetting to empty array
-      window.markerRef.current = [];
-    }
-
-    const coordMatch = query.match(
-      /^\s*(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)\s*$/
-    );
-
-    if (coordMatch) {
-      const lat = parseFloat(coordMatch[1]);
-      const lng = parseFloat(coordMatch[3]);
-
-      const maplibregl = (await import("maplibre-gl")).default;
-
-      const marker = new maplibregl.Marker({ color: "#f00" })
-        .setLngLat([lng, lat])
-        .addTo(mapRef.current);
-
-      window.markerRef.current.push(marker);
-
-      setTimeout(() => {
-        mapRef.current.flyTo({ center: [lng, lat], zoom: 14 });
-      }, 50);
-
-      setResults([]);
-    } else {
-      const resultsFromBackend = await fuzzySearch(query);
-      setResults(resultsFromBackend); // showing in dropdown
+      window.location.reload();
+    } catch (error) {
+      console.error("Error deleting notice:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete notice",
+      );
     }
   };
+
+  const router = useRouter();
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow group">
+      <h2 className="text-xl font-bold text-gray-800 group-hover:text-blue-600 transition-colors">
+        {notice.title}
+      </h2>
+      <p className="text-gray-600 mt-2">{notice.description}</p>
+      <div className="text-sm text-gray-500 mt-4">
+        <span>
+          <strong>Location:</strong> {notice.location}
+        </span>
+        <span className="ml-4">
+          <strong>Time:</strong> {new Date(notice.eventTime).toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center space-x-4 mt-4 pt-4 border-t border-gray-100">
+        {isAdmin && (
+          <>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                router.push(`/admin/publishNotice?noticeid=${notice.id}`);
+              }}
+              className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
+            >
+              <Edit className="w-4 h-4" />
+              <span>Edit</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDelete(e);
+              }}
+              className="flex items-center space-x-2 text-sm text-gray-500 hover:text-red-600 transition-colors"
+            >
+              <Trash className="w-4 h-4" />
+              <span>Delete</span>
+            </button>
+          </>
+        )}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onShare(notice);
+          }}
+          className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
+        >
+          <Share2 className="w-4 h-4" />
+          <span>Share</span>
+        </button>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onCopy(notice);
+          }}
+          className="flex items-center space-x-2 text-sm text-gray-500 hover:text-blue-600 transition-colors"
+        >
+          <Copy className="w-4 h-4" />
+          <span>Copy</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default function NoticeBoardPage() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [shareNotice, setShareNotice] = useState<Notice | null>(null);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
+  const loaderRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchNotices = useCallback(async () => {
+    if (!hasMore || loading) return;
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/notice?page=${page}`,
+      );
+      if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
+      const json = await res.json();
+
+      if (json?.noticeboard_list?.length > 0) {
+        setNotices((prev) => {
+          // TODO: add correct interface for noticeboard_list
+          const newNotices = [
+            ...prev,
+            ...json.noticeboard_list.map((n: any) => ({
+              ...n,
+              id: n.NoticeId || n.id,
+            })),
+          ];
+          setHasMore(newNotices.length < json.total_notices);
+          return newNotices;
+        });
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error("Error fetching notices:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, hasMore, loading]);
 
   useEffect(() => {
-    if (!query.trim()) {
-      setResults([]);
-      return;
-    }
+    fetchNotices();
+  }, [page, fetchNotices]);
 
-    const timeout = setTimeout(() => {
-      handleSearch();
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!isSearching && entries[0].isIntersecting && hasMore && !loading) {
+          setPage((prev) => prev + 1);
+        }
+      },
+      { threshold: 1.0 },
+    );
+    const current = loaderRef.current;
+    if (current) observer.observe(current);
+    return () => {
+      if (current) observer.unobserve(current);
+    };
+  }, [hasMore, loading]);
+
+  //cache and fuzzy search effect
+  // Cache and fuzzy search effect
+  useEffect(() => {
+    const timeout = setTimeout(async () => {
+      const query = searchTerm.trim();
+
+      // If search is empty, reset to paginated view
+      if (!query) {
+        setIsSearching(false);
+        setNotices([]);
+        setPage(1);
+        setHasMore(true);
+        return;
+      }
+
+      setIsSearching(true);
+      setLoading(true);
+
+      const CACHE_KEY = "notice_search_cache";
+
+      try {
+        const rawCache = localStorage.getItem(CACHE_KEY);
+        const cache = rawCache ? JSON.parse(rawCache) : {};
+
+        let results;
+
+        // Check cache first
+        if (cache[query]) {
+          results = cache[query];
+        } else {
+          // Fetch from API
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_MAPS_URL}/api/maps/notice/fuzzy?query=${encodeURIComponent(query)}&limit=20`,
+          );
+
+          if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
+
+          const data = await res.json();
+          results = data.results || [];
+
+          // Save to cache
+          const newCache = { ...cache, [query]: results };
+          const cacheSize = new Blob([JSON.stringify(newCache)]).size;
+          const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
+          if (cacheSize > MAX_SIZE) {
+            // Keep only current result if cache is too large
+            localStorage.setItem(
+              CACHE_KEY,
+              JSON.stringify({ [query]: results }),
+            );
+          } else {
+            localStorage.setItem(CACHE_KEY, JSON.stringify(newCache));
+          }
+        }
+
+        // Map results to match Notice interface
+        const mappedResults = results.map((n: any) => ({
+          ...n,
+          id: n.NoticeId || n.id,
+        }));
+
+        setNotices(mappedResults);
+        setHasMore(false); // Disable infinite scroll during search
+      } catch (err) {
+        console.error("Fuzzy search error:", err);
+        toast.error("Error searching notices.");
+        setNotices([]);
+      } finally {
+        setLoading(false);
+      }
     }, 300);
 
     return () => clearTimeout(timeout);
-  }, [query]);
+  }, [searchTerm]);
 
-  // Handling selecting a location from dropdown
-  const handleSelect = async (loc: any) => {
-    setQuery(loc.name); // update input
-    setResults([]); // hide dropdown
-
-    const mapRef = window.mapRef;
-    if (!mapRef || !mapRef.current) return;
-
-    if (
-      window.markerRef?.current &&
-      Array.isArray(window.markerRef.current) &&
-      window.markerRef.current.length
-    ) {
-      window.markerRef.current.forEach((m: any) => {
-        try {
-          m.remove();
-        } catch {
-          // ignore
-        }
-      });
-      window.markerRef.current = [];
-    }
-
-    const maplibregl = (await import("maplibre-gl")).default;
-    const marker = new maplibregl.Marker({ color: "#f00" })
-      .setLngLat([loc.longitude, loc.latitude])
-      .addTo(mapRef.current);
-
-    // push into array (consistent)
-    window.markerRef.current.push(marker);
-
-    mapRef.current.flyTo({ center: [loc.longitude, loc.latitude], zoom: 14 });
+  const handleShare = (notice: Notice) => {
+    setShareNotice(notice);
   };
 
-  // TODO: Fall back of nominator api, but first need to verify if it accounts for the user or the server (the api limits?)
-  // const res = await fetch(
-  //       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-  //         query
-  //       )}&format=json`
-  //     );
-  //     const data = await res.json();
-  //     if (!data[0]) return alert("Location not found");
-  //     lat = parseFloat(data[0].lat);
-  //     lng = parseFloat(data[0].lon);
+  const handleCopy = async (notice: Notice) => {
+    const text = `${notice.title}\n\n${notice.description}\n\nTime: ${new Date(
+      notice.eventTime,
+    ).toLocaleString()}\nLocation: ${notice.location}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("Notice copied to clipboard!");
+    } catch (err) {
+      alert("Failed to copy notice. Please try manually.");
+      console.error(err);
+    }
+  };
+
+  const { isAdmin } = useGContext();
 
   return (
-    <>
-      {/* TODO: can extract the login dialog pop up, as it will be required at multiple place. */}
-      {/* Login Required Dialog */}
-      <AlertDialog open={loginDialogOpen} onOpenChange={setLoginDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Login Required</AlertDialogTitle>
-            <AlertDialogDescription>
-              You need to log in to add a new location.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+    <div className="min-h-screen bg-gray-50 px-4 py-8">
+      <div className="max-w-5xl mx-auto">
+        <h1 className="text-4xl font-bold text-gray-900 mb-8">
+          Campus Notices
+        </h1>
+
+        <div className="relative mb-8">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          {isAdmin ? (
+            <button
+              type="button"
               onClick={() => {
-                setLoginDialogOpen(false);
-                router.push("/login?next=/");
+                window.location.href = "/admin/publishNotice";
               }}
+              className="absolute inset-y-0 right-2 my-auto
+             h-8 px-3
+             flex items-center gap-1 cursor-pointer
+             rounded-xl bg-blue-500 text-white
+             hover:bg-blue-600 shadow
+             transition active:scale-95"
             >
-              Log In
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <span className="text-lg font-semibold">+</span>
+              <span className="text-sm font-medium whitespace-nowrap">
+                Publish a Notice
+              </span>
+            </button>
+          ) : null}
 
-      {/* Search Bar Overlay */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-md flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-md">
-        <Input
-          placeholder="Search by name or coordinates"
-          className="flex-1 border-none text-black placeholder:text-gray-500 focus-visible:ring-0 focus-visible:ring-offset-0"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-        />
-        <Button size="icon" variant="ghost" onClick={handleSearch}>
-          <Search className="h-5 w-5 text-gray-500" />
-        </Button>
-      </div>
-
-      {/* Sync indicator */}
-      {mounted && isValidating && (
-        <div className="absolute bottom-4 right-4 text-xs text-gray-600 bg-white/80 px-3 py-1 rounded-md shadow">
-          Syncing latest data…
+          <input
+            type="text"
+            placeholder="Search notices by title, content, or department..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="block w-full pl-10 pr-44 py-3 rounded-xl
+               border border-gray-300 focus:ring-2 focus:ring-blue-400
+               shadow-sm text-gray-800 placeholder-gray-500 transition-all"
+          />
         </div>
-      )}
-      {/* Dropdown with search results */}
-      {results.length > 0 && (
-        <div className="bg-white max-h-60 overflow-auto rounded shadow-lg border">
-          {results.map((loc) => (
-            <div
-              key={loc.locationId}
-              className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
-              onClick={() => handleSelect(loc)}
-            >
-              {loc.name}
+
+        <div className="space-y-6">
+          {notices.length > 0 ? (
+            notices.map((notice) => (
+              <Link
+                href={`/noticeboard/${notice.id}`}
+                key={notice.id}
+                className="block no-underline"
+              >
+                <NoticeCard
+                  notice={notice}
+                  onShare={() => handleShare(notice)}
+                  onCopy={handleCopy}
+                />
+              </Link>
+            ))
+          ) : !loading ? (
+            <p className="text-center text-gray-500 py-12">
+              No notices available at the moment.
+            </p>
+          ) : null}
+
+          {notices.length > 0 && (
+            <div ref={loaderRef} className="text-center py-6 text-gray-500">
+              {loading
+                ? "Loading more notices..."
+                : hasMore
+                  ? "Scroll down to load more"
+                  : "You've reached the end."}
             </div>
-          ))}
+          )}
         </div>
-      )}
-    </>
+
+        {shareNotice && (
+          <ShareDialog
+            url={`${shareNotice.id}`}
+            title={shareNotice.title}
+            onClose={() => setShareNotice(null)}
+          />
+        )}
+      </div>
+    </div>
   );
 }
