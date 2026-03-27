@@ -161,13 +161,17 @@ export default function NoticeBoardPage() {
       if (json?.noticeboard_list?.length > 0) {
         setNotices((prev) => {
           // TODO: add correct interface for noticeboard_list
-          const newNotices = [
-            ...prev,
-            ...json.noticeboard_list.map((n: any) => ({
-              ...n,
-              id: n.NoticeId || n.id,
-            })),
-          ];
+   const incoming = json.noticeboard_list.map((n:any)=>({
+  ...n,
+  id:n.NoticeId || n.id
+}));
+
+const newNotices = [
+  ...prev,
+  ...incoming.filter(
+    (n:any)=>!prev.some(p=>p.id===n.id)
+  )
+];
           setHasMore(newNotices.length < json.total_notices);
           return newNotices;
         });
@@ -183,7 +187,7 @@ export default function NoticeBoardPage() {
 
   useEffect(() => {
     fetchNotices();
-  }, [page, fetchNotices]);
+  }, [page]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -209,10 +213,14 @@ export default function NoticeBoardPage() {
 
       // If search is empty, reset to paginated view
       if (!query) {
-        setIsSearching(false);
-        setNotices([]);
-        setPage(1);
-        setHasMore(true);
+    if(isSearching){
+
+    setIsSearching(false);
+    setNotices([]);
+    setPage(1);
+    setHasMore(true);
+
+  }
         return;
       }
 
