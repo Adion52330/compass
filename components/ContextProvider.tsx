@@ -45,7 +45,7 @@ export function GlobalContextProvider({ children }: { children: ReactNode }) {
         if (response.ok) {
           setLoggedIn(true);
           const data = await response.json();
-          if (data.role && data.role === 100) {
+          if (data.role && data.role >= 100) {
             setAdmin(true);
           } else {
             setAdmin(false);
