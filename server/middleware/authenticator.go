@@ -18,10 +18,10 @@ import (
 var authConfig = AuthConfig{
 	JWTSecretKey:       viper.GetString("jwt.secret"),
 	TokenExpiration:    5 * time.Minute,
-	RefreshTokenExpiry: 24 * 7 * time.Hour, // 7 days
+	RefreshTokenExpiry: 24 * 7 * time.Hour,        // 7 days
 	CookieDomain:       viper.GetString("domain"), // might need to set to "" in development
 	// FIXME(prod): Set this value to true in prod, else false
-	CookieSecure:       viper.GetString("env") != "dev", // Set to false in development
+	CookieSecure: viper.GetString("env") != "dev", // Set to false in development
 	// The Secure attribute is a crucial cookie configuration setting that instructs a web browser to send a cookie only over an encrypted HTTPS connection
 	CookieHTTPOnly: true, // Prevent XSS
 	SameSiteMode:   http.SameSiteLaxMode,
@@ -38,9 +38,22 @@ func init() {
 	}
 }
 
+var csrfProtectedMethods = map[string]struct{}{
+	"POST":   {},
+	"PUT":    {},
+	"DELETE": {},
+	"PATCH":  {},
+}
+
+// requiresCSRFProtection centralizes which HTTP methods require CSRF validation.
+func requiresCSRFProtection(method string) bool {
+	_, ok := csrfProtectedMethods[method]
+	return ok
+}
+
 // TODO: Extract the basic token extraction and verification out and keep just the user part
 func UserAuthenticator(c *gin.Context) {
-	if c.Request.Method == "POST" || c.Request.Method == "PUT" || c.Request.Method == "DELETE" || c.Request.Method == "PATCH" {
+	if requiresCSRFProtection(c.Request.Method) {
 		csrfCookie, err := c.Cookie("csrf_token")
 		csrfHeader := c.GetHeader("X-CSRF-Token")
 		if err != nil || csrfHeader == "" || csrfCookie != csrfHeader {
